@@ -6,7 +6,7 @@ class Link_State_Node(Node):
     def __init__(self, id):
         super().__init__(id)
         self.graph = Graph()
-        self.linkSeq = defaultdict(int)
+        self.linkSeq = defaultdict(list)
 
     # Return a string
     def __str__(self):
@@ -27,31 +27,29 @@ class Link_State_Node(Node):
             newNode = True
         
         #updating seq number
-        self.linkSeq[frozenset([self.id, neighbor])] += 1
-        seq = self.linkSeq[frozenset([self.id, neighbor])]
+        if frozenset([self.id, neighbor]) in self.linkSeq:
+            seq = self.linkSeq[frozenset([self.id, neighbor])]["seq"] + 1
+        else:
+            seq = 1
+    
 
         #putting edge in local graph
         self.graph.update_edge(self.id, neighbor, latency)
 
         #constructing the message
-        edges = [[self.id,neighbor,latency,seq]]
-        msg = self.construct_message(self.id, edges)
-
-        #print("edge between" + str(self.id) + "and" + str(neighbor) + "sent" )
-        self.send_to_neighbors(json.dumps(msg))
+        edges = [[self.id,neighbor,latency]]
 
         #new node case, send info of the entire graph
         if newNode:
-            edges = []
             for e in self.graph.all_edges():
                 src = e[0]
                 dst = e[1]
                 cost = e[2]
-                eSeq = self.linkSeq[frozenset([src, dst])]
-                edges.append([src,dst,cost,eSeq])
-            msg = self.construct_message(self.id, edges)
-            
-            self.send_to_neighbors(json.dumps(msg))
+                edges.append([src,dst,cost])
+
+        msg = self.construct_message(self.id, self.id, neighbor, edges, seq)
+        self.linkSeq[frozenset([self.id, neighbor])] = msg
+        self.send_to_neighbors(json.dumps(msg))
             
 
 
@@ -65,51 +63,49 @@ class Link_State_Node(Node):
         #print(msg)
         #grabbing message data
         sender = msg["sender"]
+        src = msg["src"]
+        dest = msg["dest"]
         edges = msg["edges"]
+        seq = msg["seq"]
 
-        retransmitEdges = []
-        for e in edges:
-            src = e[0]
-            dst = e[1]
-            cost = e[2]
-            seq = e[3]
-            curSeq = self.linkSeq[frozenset([src, dst])]
-           
-            #update, relay to every link except the one it got the message from
-            if seq > curSeq or curSeq == 0:
+        msg["sender"] = self.id
 
-                #print("at node: " + str(self.id) + "found update from" + str(sender))
-                self.linkSeq[frozenset([src, dst])] = seq
-                self.graph.update_edge(src,dst,cost)
-                retransmitEdges.append(e)
-                
-            elif seq < curSeq:
-                curLatency = self.graph.get_latency(src,dst)
-                edges = []
-                edges.append([src,dst,curLatency,curSeq])
-                retransmitEdges.append([src,dst,curLatency,curSeq])
-                newMsg = self.construct_message(self.id, edges)
-                self.send_to_neighbor(sender,json.dumps(newMsg)) 
+        curSeq = -1
+        curMsg = {}
+        if frozenset([src, dest]) in self.linkSeq:
+            curMsg = self.linkSeq[frozenset([src, dest])]
+            curSeq = curMsg["seq"]
 
 
+        if seq > curSeq:
+            self.linkSeq[frozenset([src, dest])] = msg
+            for e in edges:
+                s = e[0]
+                d = e[1]
+                cost = e[2]
+                self.graph.update_edge(s,d,cost)
+                self.linkSeq[frozenset([s,d])] = msg
+            for n in self.neighbors:
+                if n != sender:
+                    self.send_to_neighbor(n,json.dumps(msg))
+            
+        elif seq < curSeq:
+            curMsg["sender"] = self.id
+            self.send_to_neighbor(sender, json.dumps(curMsg))
 
-        
-            nextMsg = self.construct_message(self.id,retransmitEdges)
-
-
-            #for n in self.neighbors:
-                #if n != sender:
-            self.send_to_neighbors(json.dumps(nextMsg))
 
 
         
         #print(src, dst, cost, seq)
         pass
 
-    def construct_message(self, sender, edges):
+    def construct_message(self, sender, src, dest, edges, seq):
         msg = {
         "sender": sender,
-        "edges" : edges
+        "src": src,
+        "dest": dest,
+        "edges" : edges,
+        "seq" : seq
         }
 
         return msg
