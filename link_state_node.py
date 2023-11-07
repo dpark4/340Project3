@@ -11,6 +11,7 @@ class Link_State_Node(Node):
     # Return a string
     def __str__(self):
         self.graph.display()
+        #print(self.djikstra(4))
         return "Rewrite this function to define your node dump printout"
 
     # Fill in this function
@@ -21,6 +22,8 @@ class Link_State_Node(Node):
             self.neighbors.remove(neighbor)
         elif neighbor not in self.neighbors:
             self.neighbors.append(neighbor)
+
+        if not self.graph.in_graph(neighbor):
             newNode = True
         
         #updating seq number
@@ -31,20 +34,25 @@ class Link_State_Node(Node):
         self.graph.update_edge(self.id, neighbor, latency)
 
         #constructing the message
-        msg = self.construct_message(self.id,self.id,neighbor,latency,seq)
+        edges = [[self.id,neighbor,latency,seq]]
+        msg = self.construct_message(self.id, edges)
 
         #print("edge between" + str(self.id) + "and" + str(neighbor) + "sent" )
         self.send_to_neighbors(json.dumps(msg))
 
         #new node case, send info of the entire graph
         if newNode:
+            edges = []
             for e in self.graph.all_edges():
                 src = e[0]
                 dst = e[1]
                 cost = e[2]
                 eSeq = self.linkSeq[frozenset([src, dst])]
-                msg = self.construct_message(self.id,src,dst,cost,eSeq)
-                self.send_to_neighbors(json.dumps(msg))
+                edges.append([src,dst,cost,eSeq])
+            msg = self.construct_message(self.id, edges)
+            
+            self.send_to_neighbors(json.dumps(msg))
+            
 
 
 
@@ -54,46 +62,54 @@ class Link_State_Node(Node):
     # Fill in this function
     def process_incoming_routing_message(self, m):
         msg = json.loads(m)
+        #print(msg)
         #grabbing message data
         sender = msg["sender"]
-        src = msg["src"]
-        dst = msg["dst"]
-        cost = msg["cost"]
-        seq = msg["seq"]
+        edges = msg["edges"]
 
-        curSeq = self.linkSeq[frozenset([src, dst])]
-        #now the sender is this node
-        msg["sender"] = self.id
-        #update, relay to every link except the one it got the message from
-        if seq > curSeq or curSeq == 0:
+        retransmitEdges = []
+        for e in edges:
+            src = e[0]
+            dst = e[1]
+            cost = e[2]
+            seq = e[3]
+            curSeq = self.linkSeq[frozenset([src, dst])]
+           
+            #update, relay to every link except the one it got the message from
+            if seq > curSeq or curSeq == 0:
 
-            #print("at node: " + str(self.id) + "found update from" + str(sender))
-            self.linkSeq[frozenset([src, dst])] = seq
-            self.graph.update_edge(src,dst,cost)
-            
-            for n in self.neighbors:
-                if n != sender:
-                    #print("sending to neighbor")
-                    self.send_to_neighbor(n,json.dumps(msg))
-        elif seq < curSeq:
-            curLatency = self.graph.get_latency(src,dst)
-            msg["cost"] = curLatency
-            msg[seq] = curSeq
-            self.send_to_neighbor(sender,json.dumps(msg))
+                #print("at node: " + str(self.id) + "found update from" + str(sender))
+                self.linkSeq[frozenset([src, dst])] = seq
+                self.graph.update_edge(src,dst,cost)
+                retransmitEdges.append(e)
+                
+            elif seq < curSeq:
+                curLatency = self.graph.get_latency(src,dst)
+                edges = []
+                edges.append([src,dst,curLatency,curSeq])
+                retransmitEdges.append([src,dst,curLatency,curSeq])
+                newMsg = self.construct_message(self.id, edges)
+                self.send_to_neighbor(sender,json.dumps(newMsg)) 
+
+
+
+        
+            nextMsg = self.construct_message(self.id,retransmitEdges)
+
+
+            #for n in self.neighbors:
+                #if n != sender:
+            self.send_to_neighbors(json.dumps(nextMsg))
 
 
         
         #print(src, dst, cost, seq)
         pass
 
-    def construct_message(self, sender, src,dest,cost,seq):
+    def construct_message(self, sender, edges):
         msg = {
-            
         "sender": sender,
-        "src": src,
-        "dst": dest,
-        "cost": cost,
-        "seq": seq
+        "edges" : edges
         }
 
         return msg
@@ -101,6 +117,7 @@ class Link_State_Node(Node):
     # Return a neighbor, -1 if no path to destination
     def get_next_hop(self, destination):
         path = self.djikstra(destination)
+        print(path)
         next_hop = path[len(path) - 1]
         return next_hop
     
@@ -114,7 +131,7 @@ class Link_State_Node(Node):
             verticies.add(v)
         dist[self.id] = 0
 
-        print(verticies)
+        #print(verticies)
         while verticies:
 
             #find unvisited node with lowest distance
@@ -137,8 +154,8 @@ class Link_State_Node(Node):
         #return the shortest path:
         path = []
         t = destination
-        print(prev)
-        print(dist)
+        #print(prev)
+        #print(dist)
         while t != None and t != self.id:
             path.append(t)
             t = prev[t]
@@ -218,5 +235,6 @@ class Graph():
 
     def display(self):
         print(self.graph)
-
     
+    def in_graph(self, n):
+        return n in self.graph.keys()
