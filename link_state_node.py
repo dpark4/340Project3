@@ -19,6 +19,10 @@ class Link_State_Node(Node):
     def link_has_been_updated(self, neighbor, latency):
         
         
+
+        
+            
+
         newNode = False
         if latency == -1 and neighbor in self.neighbors:
             self.neighbors.remove(neighbor)
@@ -28,14 +32,17 @@ class Link_State_Node(Node):
 
         
         
+        
+        
         #updating seq number
         if frozenset([self.id, neighbor]) in self.linkSeq:
             seq = self.linkSeq[frozenset([self.id, neighbor])] + 1
+            self.linkSeq[frozenset([self.id, neighbor])] = seq
         else:
             seq = 1
             self.linkSeq[frozenset([self.id, neighbor])] = seq
     
-
+        
         #putting edge in local graph
         self.graph.update_edge(self.id, neighbor, latency)
         #if self.id == 1 and neighbor == 3:
@@ -149,7 +156,7 @@ class Link_State_Node(Node):
         
         #print(self.id)
 
-        #self.graph.check_empty()
+        self.graph.check_empty()
         #self.graph.display()
         
         verticies = set()
