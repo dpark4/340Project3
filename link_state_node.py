@@ -46,7 +46,6 @@ class Link_State_Node(Node):
                 dst = e[1]
                 cost = e[2]
                 edges.append([src,dst,cost])
-
         msg = self.construct_message(self.id, self.id, neighbor, edges, seq)
         self.linkSeq[frozenset([self.id, neighbor])] = msg
         self.send_to_neighbors(json.dumps(msg))
@@ -60,6 +59,7 @@ class Link_State_Node(Node):
     # Fill in this function
     def process_incoming_routing_message(self, m):
         msg = json.loads(m)
+    
         #print(msg)
         #grabbing message data
         sender = msg["sender"]
@@ -73,9 +73,12 @@ class Link_State_Node(Node):
         curSeq = -1
         curMsg = {}
         if frozenset([src, dest]) in self.linkSeq:
+            
             curMsg = self.linkSeq[frozenset([src, dest])]
             curSeq = curMsg["seq"]
-
+            if curSeq == seq and (len(curMsg["edges"]) < len(edges)):
+                curSeq = -1
+        
 
         if seq > curSeq:
             self.linkSeq[frozenset([src, dest])] = msg
@@ -93,7 +96,7 @@ class Link_State_Node(Node):
             curMsg["sender"] = self.id
             self.send_to_neighbor(sender, json.dumps(curMsg))
 
-
+        
 
         
         #print(src, dst, cost, seq)
@@ -113,11 +116,13 @@ class Link_State_Node(Node):
     # Return a neighbor, -1 if no path to destination
     def get_next_hop(self, destination):
         path = self.djikstra(destination)
-        print(path)
+        #print(path)
         next_hop = path[len(path) - 1]
         return next_hop
     
     def djikstra(self, destination):
+        #print("djikstras!")
+        self.graph.display()
         verticies = set()
         dist = {}
         prev = {}
@@ -126,11 +131,12 @@ class Link_State_Node(Node):
             prev[v] = None
             verticies.add(v)
         dist[self.id] = 0
-
+        
         #print(verticies)
         while verticies:
 
             #find unvisited node with lowest distance
+
             minDist = float('inf')
             minV = -100
             for v in verticies:
@@ -148,6 +154,7 @@ class Link_State_Node(Node):
                         prev[v] = minV
 
         #return the shortest path:
+        #print(dist, prev)
         path = []
         t = destination
         #print(prev)
@@ -166,7 +173,7 @@ class Graph():
         self.graph = defaultdict(list)
     
     def update_edge(self, source, dest, latency):
-    
+        #print(latency)
         if latency == -1:
             print("deleting a node")
         in_source = False
@@ -197,11 +204,18 @@ class Graph():
                 in_dest = True
         if not in_dest:
             self.graph[dest].append([source,latency])
-
+        #print(remove, latency)
         if remove:
-            print(dstEleToRemove, srcEleToRemove)
+            #print(dstEleToRemove, srcEleToRemove)
             self.graph[dest].remove(dstEleToRemove)
             self.graph[source].remove(srcEleToRemove)
+
+            if len(self.graph[dest]) == 0:
+                self.graph.pop(dest)
+            if len(self.graph[source]) == 0:
+                self.graph.pop(source)
+
+        
 
 
     def get_verticies(self):
