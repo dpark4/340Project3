@@ -6,10 +6,11 @@ class Link_State_Node(Node):
     def __init__(self, id):
         super().__init__(id)
         self.graph = Graph()
-        self.linkSeq = defaultdict(list)
+        self.linkSeq = defaultdict(int)
 
     # Return a string
     def __str__(self):
+        print(self.id)
         self.graph.display()
         #print(self.djikstra(4))
         return "Rewrite this function to define your node dump printout"
@@ -17,27 +18,31 @@ class Link_State_Node(Node):
     # Fill in this function
     def link_has_been_updated(self, neighbor, latency):
         
+        
         newNode = False
         if latency == -1 and neighbor in self.neighbors:
             self.neighbors.remove(neighbor)
         elif neighbor not in self.neighbors:
             self.neighbors.append(neighbor)
-
-        if not self.graph.in_graph(neighbor):
             newNode = True
+
+        
         
         #updating seq number
         if frozenset([self.id, neighbor]) in self.linkSeq:
-            seq = self.linkSeq[frozenset([self.id, neighbor])]["seq"] + 1
+            seq = self.linkSeq[frozenset([self.id, neighbor])] + 1
         else:
             seq = 1
+            self.linkSeq[frozenset([self.id, neighbor])] = seq
     
 
         #putting edge in local graph
         self.graph.update_edge(self.id, neighbor, latency)
-
+        #if self.id == 1 and neighbor == 3:
+            #print(latency)
+            #self.graph.display()
         #constructing the message
-        edges = [[self.id,neighbor,latency]]
+        edges = [[self.id,neighbor,latency, seq]]
 
         #new node case, send info of the entire graph
         if newNode:
@@ -45,9 +50,9 @@ class Link_State_Node(Node):
                 src = e[0]
                 dst = e[1]
                 cost = e[2]
-                edges.append([src,dst,cost])
+                seq = self.linkSeq[frozenset([src,dst])]
+                edges.append([src,dst,cost, seq])
         msg = self.construct_message(self.id, self.id, neighbor, edges, seq)
-        self.linkSeq[frozenset([self.id, neighbor])] = msg
         self.send_to_neighbors(json.dumps(msg))
             
 
@@ -59,18 +64,15 @@ class Link_State_Node(Node):
     # Fill in this function
     def process_incoming_routing_message(self, m):
         msg = json.loads(m)
+        
     
         #print(msg)
         #grabbing message data
         sender = msg["sender"]
-        src = msg["src"]
-        dest = msg["dest"]
         edges = msg["edges"]
-        seq = msg["seq"]
-
         msg["sender"] = self.id
 
-        curSeq = -1
+        """curSeq = -1
         curMsg = {}
         if frozenset([src, dest]) in self.linkSeq:
             
@@ -79,22 +81,44 @@ class Link_State_Node(Node):
             if curSeq == seq and (len(curMsg["edges"]) < len(edges)):
                 curSeq = -1
         
-
         if seq > curSeq:
-            self.linkSeq[frozenset([src, dest])] = msg
-            for e in edges:
-                s = e[0]
-                d = e[1]
-                cost = e[2]
+            self.linkSeq[frozenset([src, dest])] = msg"""
+        updatedEdges = []
+        oldEdges = []
+        for e in edges:
+            s = e[0]
+            d = e[1]
+            cost = e[2]
+            seq = e[3]
+            
+            curSeq = 0
+            seqExists = False
+            if frozenset([s,d]) in self.linkSeq:
+                seqExists = True
+                curSeq = self.linkSeq[frozenset([s,d])]
+            #if cost == -1:
+               # print(self.id, e, curSeq)
+               # self.graph.display()
+            if seq > curSeq:
+                updatedEdges.append([s,d,cost,seq])
                 self.graph.update_edge(s,d,cost)
-                self.linkSeq[frozenset([s,d])] = msg
+                self.linkSeq[frozenset([s,d])] = seq
+            elif seqExists and seq < curSeq:
+                oldEdges.append([s,d,self.graph.get_latency(s,d),curSeq])
+        if updatedEdges:
+            msg["edges"] = updatedEdges
             for n in self.neighbors:
                 if n != sender:
                     self.send_to_neighbor(n,json.dumps(msg))
+
+        if oldEdges:
+            msg["edges"] = oldEdges
+            self.send_to_neighbor(sender, json.dumps(msg))   
+
             
-        elif seq < curSeq:
-            curMsg["sender"] = self.id
-            self.send_to_neighbor(sender, json.dumps(curMsg))
+        
+            
+        
 
         
 
@@ -122,7 +146,12 @@ class Link_State_Node(Node):
     
     def djikstra(self, destination):
         #print("djikstras!")
-        self.graph.display()
+        
+        #print(self.id)
+
+        #self.graph.check_empty()
+        #self.graph.display()
+        
         verticies = set()
         dist = {}
         prev = {}
@@ -131,7 +160,7 @@ class Link_State_Node(Node):
             prev[v] = None
             verticies.add(v)
         dist[self.id] = 0
-        
+        #print(self.id)
         #print(verticies)
         while verticies:
 
@@ -174,8 +203,9 @@ class Graph():
     
     def update_edge(self, source, dest, latency):
         #print(latency)
-        if latency == -1:
-            print("deleting a node")
+        
+            
+            
         in_source = False
         remove = False
         srcEleToRemove = []
@@ -189,7 +219,7 @@ class Graph():
                     break
                 i[1] = latency
                 in_source = True
-        if not in_source:
+        if not in_source and latency != -1:
             self.graph[source].append([dest,latency])
 
         in_dest = False
@@ -202,7 +232,7 @@ class Graph():
                     break
                 i[1] = latency
                 in_dest = True
-        if not in_dest:
+        if not in_dest and latency != -1:
             self.graph[dest].append([source,latency])
         #print(remove, latency)
         if remove:
@@ -210,10 +240,12 @@ class Graph():
             self.graph[dest].remove(dstEleToRemove)
             self.graph[source].remove(srcEleToRemove)
 
-            if len(self.graph[dest]) == 0:
-                self.graph.pop(dest)
-            if len(self.graph[source]) == 0:
-                self.graph.pop(source)
+        verts = list(self.get_verticies())
+        for i in range(len(verts)):
+            v = verts[i]
+            if len(self.graph[v]) == 0:
+                self.graph.pop(v)
+       
 
         
 
@@ -248,3 +280,10 @@ class Graph():
     
     def in_graph(self, n):
         return n in self.graph.keys()
+    
+    def check_empty(self):
+        verts = list(self.get_verticies())
+        for i in range(len(verts)):
+            v = verts[i]
+            if len(self.graph[v]) == 0:
+                self.graph.pop(v)
